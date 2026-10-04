@@ -1,0 +1,10 @@
+cff-version: 1.2.0
+message: "このプログラムを利用する場合は、次のとおり引用してください。"
+title: "CDAT verification code"
+authors:
+  - family-names: "Azuma"
+    given-names: "Akihiro"
+license: MIT
+repository-code: "https://github.com/week331/cdat"
+version: "2026.10.04"
+date-released: "2026-10-04"
