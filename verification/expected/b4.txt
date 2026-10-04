@@ -1,0 +1,5 @@
+600000時点（取引時に記録されない販売 29978 件、保留中の輸出の確認 10041 件を含む）で、次がすべて成り立った：
+  CD_i − Debt_i = IT_i − R_auto,i − R_exp,i − R_rev,i + Repay_i、Bal_T = Tax_rec − R_auto − R_exp − R_rev + Repay_tot − TR、
+  Bal_net = Tax_nc − Debt_tot − TR、Tax_nc = Tax_C + Tax_ne、0 ≤ Tax_prov ≤ Tax_ne、
+  Bal_net ≥ 0、Bal_net − Tax_pending ≥ 0、Bal_net − Tax_pending − Tax_prov ≥ 0。還付はすべて受領済みの資金から支払うことができた
+命題3：事業者ごとに CD_i + R_auto,i + R_exp,i + R_rev,i ≤ BT_i を 3600000 回検査（適格割合1・事後訂正なしの事業者では等号）
