@@ -3,9 +3,12 @@
 を計算する。両制度で
   国庫の受領累計 = 発生税収 + 立替 − 預かり
 が成り立つことを assert で検算する。
+表16.7(c)（s7c）では、16.7節の取引列に、仕入税額の扱いの異なる続きを制度ごとに加え、
+最終的に国庫に残る仕入税額 K と税収不足額 L を求める。
 
 現行VATモデル（15.1節）
   ・各登録事業者は課税期間の末に（売上税額 − 控除額）を申告し、正なら納付、負なら審査の後に還付を受ける。
+  ・還付申告が審査で否認された場合と、控除不足額を申告しない場合は、その額の控除を認めない（表16.7(c)）。
   ・輸入は税関で課税し、登録事業者は控除する。輸出は免税で、その仕入税額は控除する。
   ・非課税売上だけに対応する仕入税額は控除しない。共通仕入は期中は暫定割合で控除見込みとし、期末に確定割合で調整する
     （発生税収の比較の便宜のため、CDATと同じ暫定割合を用いる）。
@@ -85,7 +88,8 @@ class VAT:
         n0 = s.net(b)
         s.out[b] = s._g(s.out, b) + F(tax); s.gross += F(tax)
         s.log(t, ev, calc=f"{b} {num(n0)} + {fmt(tax)} = {num(s.net(b))}（みなし譲渡の売上税額）")
-    def period_end(s, t, ev, ratio=None, only=None):
+    def period_end(s, t, ev, ratio=None, only=None, no_claim=()):
+        """no_claim：控除不足額を申告しない事業者（その額の控除を受けない）"""
         ratio = ratio or {}
         parts = []
         for b, lst in list(s.common.items()):
@@ -103,6 +107,9 @@ class VAT:
             net = s._g(s.out, b) - s._g(s.ded, b)
             if net > 0:
                 s.cash += net; flow += net; pays.append(fmt(net)); parts.append(f"{b} {fmt(net)}を納付")
+            elif net < 0 and b in no_claim:
+                d0 = s.ded_cum; s.ded_cum += net
+                parts.append(f"{b} {num(net)}は申告しない、控除の累計 {fmt(d0)} − {fmt(-net)} = {fmt(s.ded_cum)}")
             elif net < 0:
                 s.pend[b] = s._g(s.pend, b) - net; parts.append(f"{b} {num(net)}は還付待ち{fmt(-net)}")
             s.out.pop(b, None); s.ded.pop(b, None)
@@ -112,6 +119,10 @@ class VAT:
     def refund(s, t, ev, b):
         a = s._g(s.pend, b); s.pend[b] = F(0); s.cash -= a
         s.log(t, ev, -a, calc=f"{b} 還付待ち{fmt(a)}を還付、国庫 −{fmt(a)}")
+    def deny(s, t, ev, b):
+        """還付申告を審査で否認する：還付待ちを取り消し、その額の控除を認めない"""
+        a = s._g(s.pend, b); s.pend[b] = F(0); d0 = s.ded_cum; s.ded_cum -= a
+        s.log(t, ev, 0, calc=f"{b} 還付待ち{fmt(a)}を否認、控除の累計 {fmt(d0)} − {fmt(a)} = {fmt(s.ded_cum)}")
 
 class CDAT:
     def __init__(s):
@@ -320,6 +331,93 @@ def s7():
     v.period_end("期1末", "申告（記録分のみ、控除は全額→還付申告）"); c.note("期1末", "手続なし")
     v.refund("期1末+", "審査後の還付（審査を通った場合）", "事業者2")
     return {"VAT": v, "CDAT": c}
+
+class OldCDAT(CDAT):
+    """旧版のCDAT。表16.7(c)の比較にだけ用いる。本稿の更新則に、旧版の即時清算（CDを審査なしに現金化すること）を加える。"""
+    def immediate(s, t, ev, b):
+        a = s._g(s.CD, b); s.CD[b] = F(0); s.cash -= a
+        s.log(t, ev, -a, f"即時清算{fmt(a)}", calc=f"国庫 −{fmt(a)}、{b}のCD {fmt(a)} − {fmt(a)} = 0")
+
+def s7c(p_in=1000, s_rec=600, s_u=900, extras=(0, 600, 4600)):
+    """表16.7(c)。16.7節の取引列（事業者1→事業者2の仕入の税額 p_in、事業者2の記録された消費者への販売の税額 s_rec、
+    記録されない現金売上の税額 s_u）に、仕入税額の扱いの異なる続きを加え、取引列の終わりに
+      K = 国庫の受領累計 − 記録された消費者への販売の税額
+      L = 真の発生税収 − 国庫の受領累計（真の発生税収 = 記録された消費者への販売の税額 + s_u）
+    を求める。K は台帳からも求めて照合する（CDATはCDの合計、現行VATは控除されなかった事業取引の税額）。
+    事業者2の後の記録された販売の税額と、共謀する事業者3の記録された販売の税額は、残る仕入税額 + extras の各値とし、
+    K と L がその値によらないことを確かめる。共謀による行は、事業者3の記録された販売の税額が移された額以上の場合である
+    （小さければ、残りは事業者3のCD（現行VATでは事業者3の控除不足額）となる）。
+    返り値：{続きの名前: (K, L)}、'refund'（現行VATで還付される控除不足額）、'cd'（残るCD）、
+    'sys'（16.7節と同じ取引列の現行VATとCDAT。表16.7(a)(b)と照合する）、'all'（計算したすべての取引列）"""
+    made = []
+    def pre(x):
+        # 16.7節の取引列（s7 の時点3まで）
+        made.append(x)
+        x.sale("1", f"仕入：事業者1→事業者2（税額{fmt(p_in)}）", "事業者1", "事業者2", p_in)
+        if s_rec: x.sale("2", f"電子決済の売上：事業者2→消費者（税額{fmt(s_rec)}）", "事業者2", "GEN", s_rec)
+        if isinstance(x, VAT): x.log("3", f"現金売上（税額{fmt(s_u)}）を申告しない", calc="申告されないため未精算は変化なし")
+        else: x.note("3", f"現金売上（税額{fmt(s_u)}）を記録しない", calc="台帳に記録されないため変化なし")
+        return x
+    def KL(x, tax_c):
+        """tax_c：記録された消費者への販売の税額"""
+        if isinstance(x, CDAT):
+            assert sum(x.TP.values(), F(0)) == 0 and sum(x.Debt.values(), F(0)) == 0   # 記録された税額は納付済み
+            assert x.taxnc() == tax_c                       # 記録された取引の発生税収（命題1）
+            k_ledger = sum(x.CD.values(), F(0))             # 国庫に留まるCD
+        else:
+            fl, bd = x.fl_bd(); assert fl == 0 and bd == 0  # 未精算の納付額と還付待ちがない
+            k_ledger = x.gross - tax_c - x.ded_cum          # 事業取引の税額のうち控除されなかった額
+        K = x.cash - tax_c; L = tax_c + s_u - x.cash
+        assert K == k_ledger and L == s_u - K
+        return (K, L)
+    def same(lst):
+        assert len(set(lst)) == 1, lst
+        return lst[0]
+    END = ("期1末", "申告（記録分のみ、控除は全額→還付申告）")
+    r = {"sys": {}, "all": made, "s_u": F(s_u), "s_rec": F(s_rec)}
+    # ---- 現行VAT ----
+    v = pre(VAT()); v.period_end(*END); v.refund("期1末+", "審査後の還付（審査を通った場合）", "事業者2")
+    r["refund"] = -v.rows[-1][2]; r["VAT還付"] = KL(v, s_rec); r["sys"]["VAT"] = v
+    v = pre(VAT()); v.period_end(*END); v.deny("期1末+", "還付申告を審査で否認", "事業者2")
+    r["VAT否認"] = KL(v, s_rec)
+    v = pre(VAT()); v.period_end("期1末", "申告（控除不足額は申告しない）", no_claim={"事業者2"})
+    r["VAT申告せず"] = KL(v, s_rec)
+    lst = []
+    for e in extras:
+        v = pre(VAT()); k = -v.net("事業者2"); x3 = k + e
+        v.sale("4", f"架空の販売：事業者2→事業者3（税額{fmt(k)}）", "事業者2", "事業者3", k)
+        v.sale("5", f"事業者3→消費者（税額{fmt(x3)}）", "事業者3", "GEN", x3)
+        v.period_end("期1末", "申告・納付（事業者2の控除不足額は0）")
+        lst.append(KL(v, s_rec + x3))
+    r["VAT共謀"] = same(lst)
+    # ---- CDAT ----
+    c = pre(CDAT()); c.note("期1末", "手続なし")
+    r["cd"] = c.CD["事業者2"]; r["CDAT契機なし"] = KL(c, s_rec); r["sys"]["CDAT"] = c
+    lst = []
+    for e in extras:
+        c = pre(CDAT()); c.note("期1末", "手続なし"); y = c.CD["事業者2"] + e
+        c.sale("4", f"期2：事業者2→消費者（税額{fmt(y)}）", "事業者2", "GEN", y); c.note("期2末", "手続なし")
+        lst.append(KL(c, s_rec + y))
+    r["CDAT後の販売"] = same(lst)
+    c = pre(CDAT()); c.note("期1末", "審査付き還付の申請", calc="申請のみで変化なし（還付は期1末+）")
+    c.reviewed("期1末+", "審査付き還付", "事業者2", c.CD["事業者2"])
+    r["CDAT審査付き還付"] = KL(c, s_rec)
+    lst = []
+    for e in extras:
+        c = pre(CDAT()); k = c.CD["事業者2"]; x3 = k + e
+        c.sale("4", f"架空の販売：事業者2→事業者3（税額{fmt(k)}）", "事業者2", "事業者3", k)
+        c.sale("5", f"事業者3→消費者（税額{fmt(x3)}）", "事業者3", "GEN", x3); c.note("期1末", "手続なし")
+        lst.append(KL(c, s_rec + x3))
+    r["CDAT共謀"] = same(lst)
+    # ---- 旧版のCDAT ----
+    o = pre(OldCDAT())
+    # この取引列では、販売の還付額は旧版の定義（付録B.3.1：仕入の後の累積差額 −p_in、還付額 min(税額, max(0, −累積差額))）でも本稿のβと同じ
+    assert p_in - o.CD["事業者2"] == min(F(s_rec), max(F(0), F(p_in)))
+    o.immediate("期1末", "即時清算（旧版）", "事業者2")
+    r["旧版即時清算"] = KL(o, s_rec)
+    # 表の一つの行にまとめる続きは、同じ K と L を与える
+    assert r["VAT否認"] == r["VAT申告せず"] and r["CDAT後の販売"] == r["CDAT審査付き還付"]
+    return r
 
 def s8():
     v = VAT(); c = CDAT()

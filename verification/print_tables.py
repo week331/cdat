@@ -1,4 +1,5 @@
 """論文の16節と付録Bの表を、本文と同じ順に出力し、付録B.1の計算式の左辺と右辺が一致することを確かめる。
+表16.7(c)では、16.7節の本文の比較と4.1節の例も確かめる。
 使い方：python3 print_tables.py"""
 import scenarios as S
 import appendix_b as B
@@ -23,6 +24,7 @@ SPECS = [
     ('TABLE', '16.6', 'CDAT（審査付き還付を利用）', '表16.6(c) CDAT（審査付き還付を利用）'),
     ('TABLE', '16.7', 'VAT', '表16.7(a) 現行VAT（控除不足額の還付が審査を通った場合）'),
     ('TABLE', '16.7', 'CDAT', '表16.7(b) CDAT'),
+    ('T167C',),
     ('TABLE', '16.8', 'VAT', '表16.8(a) 現行VAT'),
     ('TABLE', '16.8', 'CDAT', '表16.8(b) CDAT'),
     ('TABLE', '16.9a', 'VAT', '表16.9(a) 現行VAT（軽減税率の販売）'),
@@ -71,6 +73,7 @@ def main():
         elif kind == "B31":
             t31, ro, rn, to, tn = B.b31()
             out.append(t31 + f"\n還付の累計：旧版 {S.fmt(ro)}、本稿 {S.fmt(rn)}。国庫の正味の税収：旧版 {S.fmt(to)}、本稿 {S.fmt(tn)}")
+        elif kind == "T167C": out.append(L.t167c() + "\n" + L.t167c_check())
         elif kind == "B32": out.append(B.b32())
         elif kind == "B33": out.append(B.b33())
         elif kind == "B34": out.append(B.b34())
