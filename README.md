@@ -4,7 +4,7 @@
 
 ## 内容
 
-- `verification/`：論文（2026-10-05版）の16節と付録Bの数値を再現する検算プログラム。使い方は `verification/README.md` を参照。
+- `verification/`：論文（2026-10-10版）の16節と付録Bの数値を再現する検算プログラム。使い方は `verification/README.md` を参照。
 - `.github/workflows/verify.yml`：ファイルが更新されるたびに、GitHub上で検算を自動実行する設定。結果は「Actions」タブで確認できます。
 
 今後、CDATウォレットと還付バッファの動きを確かめる模擬アプリケーション（実際のお金や個人情報は扱わない）を加える予定です。
